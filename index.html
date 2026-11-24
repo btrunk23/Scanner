@@ -41,6 +41,12 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 .ph em{position:absolute;left:4px;bottom:4px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:1px 5px;border-radius:4px;font-style:normal}
 .mini{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .mini b{font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:14px}
+.chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+textarea{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
+.onsite{display:flex;gap:8px;align-items:center;margin:10px 0;font-size:14px}.onsite input{width:auto}
+button.b:disabled{opacity:.5}
 </style>
 </head>
 <body>
@@ -57,17 +63,27 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 
 <section id="s-list">
   <h2>List</h2>
+  <button class="b p" data-send>Send to site</button>
+  <div class="msg" data-sendmsg></div>
   <div id="list"></div>
   <div class="msg" id="emptyMsg">Nothing yet. Scan something.</div>
 </section>
 
 <section id="s-export">
-  <h2>Export</h2>
+  <h2>Send to site</h2>
+  <button class="b p" data-send>Send to site</button>
+  <div class="msg" data-sendmsg></div>
+  <div class="f"><small>Site passcode (the SEND_KEY you set in Cloudflare)</small><input id="skey" type="password" autocomplete="off" autocapitalize="off" placeholder="Passcode"></div>
+  <button class="b" id="checkBtn">Test connection</button>
+  <button class="b" id="markBtn">Mark all as already on site</button>
+  <div class="msg" id="checkMsg"></div>
+
+  <h2 style="margin-top:22px">Export</h2>
   <button class="b p" id="csvBtn">Download CSV</button>
   <button class="b" id="zipBtn">Download photos (zip)</button>
   <button class="b" id="shareBtn" style="display:none">Share / save to Files</button>
   <div class="msg" id="expMsg"></div>
-  <div class="msg">CSV columns: upc, title, format, year, label, condition, price, photo_files. Photo file names in the CSV match the names inside the zip. If Excel shows UPCs like 1.2E+11, set that column to Text, or open the CSV in Google Sheets.</div>
+  <div class="msg">CSV columns: upc, title, format, year, label, condition, price, photo_files, genre, desc, tags. Photo file names in the CSV match the names inside the zip. If Excel shows UPCs like 1.2E+11, set that column to Text, or open the CSV in Google Sheets.</div>
 
   <h2 style="margin-top:22px">Lookups</h2>
   <button class="b" id="retryBtn">Retry empty / failed lookups</button>
@@ -90,7 +106,12 @@ const FORMATS=['4K UHD','Blu-ray','DVD','VHS','CD','Other'];
 const CONDS=['New','Like New','Very Good','Good'];
 const $=s=>document.querySelector(s);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-let items=[],db=null,dbOK=true,token='';
+let items=[],db=null,dbOK=true,token='',sendKey='',sending=false;
+const SITE='https://site.bryantrunk.workers.dev';
+const GENRES=['Action','Adventure','Animation','Anime','Comedy','Crime','Documentary','Drama','Family','Fantasy','Horror','Musical','Romance','Sci-Fi','Thriller','War','Western','Classical','Country','Electronic','Hip-Hop','Industrial','Jazz','Metal','Pop','Punk','R&B','Rock','Soundtrack','Other'];
+// These must match the filter names on the site.
+const PACK=['Steelbook','Slipcover','Digibook / Mediabook','Box set','Multi-disc set'];
+const REL=["Collector's Edition",'Limited Edition','Boutique','Special / Anniversary Edition','Out of print','Import / Region','Promo','Screener','3D'];
 
 /* ---------- storage ---------- */
 function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open('mediascan',1);
@@ -265,23 +286,34 @@ function buildCard(it){
     <div class="row"><div class="f"><small>Format</small><select data-f="format"></select></div><div class="f"><small>Year</small><input data-f="year" inputmode="numeric"></div></div>
     <div class="f"><small>Label</small><input data-f="label"></div>
     <div class="row"><div class="f"><small>Condition</small><select data-f="condition"></select></div><div class="f"><small>Price</small><input data-f="price" inputmode="decimal" placeholder="0.00"></div></div>
+    <div class="f"><small>Genre</small><select data-f="genre"></select></div>
+    <div class="f"><small>Packaging</small><div class="chips" data-tags="pack"></div></div>
+    <div class="f"><small>Release</small><div class="chips" data-tags="rel"></div></div>
+    <div class="f"><small>Description / notes (shows on the site)</small><textarea data-f="desc" rows="3"></textarea></div>
     <div class="f"><small>Photos (first = front, second = back)</small><div class="ph" data-ph></div>
       <label class="b">Add photos<input type="file" accept="image/*" multiple hidden data-file></label></div>
+    <label class="onsite"><input type="checkbox" data-sent> Already on the site (skipped when sending)</label>
     <button class="b" data-retry style="display:none">Retry lookup</button>
     <button class="b d" data-del>Delete item</button>
   </div>`;
   el.querySelector('[data-f=format]').innerHTML=optHTML(FORMATS,'',true);
   el.querySelector('[data-f=condition]').innerHTML=optHTML(CONDS,'',true);
+  el.querySelector('[data-f=genre]').innerHTML=optHTML(GENRES,'',true);
+  [['pack',PACK],['rel',REL]].forEach(([k,list])=>{const box=el.querySelector('[data-tags='+k+']');
+    list.forEach(name=>{const b=document.createElement('button');b.type='button';b.textContent=name;b.dataset.tag=name;
+      b.onclick=()=>{const t=it.tags||[];it.tags=t.includes(name)?t.filter(x=>x!==name):t.concat(name);changed(it);fillTags(it,el);fillHead(it,el);};box.appendChild(b);});});
+  el.querySelector('[data-sent]').onchange=e=>{it.sent=e.target.checked;save(it);fillHead(it,el);updateSend();};
   el.querySelector('.head').onclick=()=>{const b=el.querySelector('.body');b.hidden=!b.hidden;el.querySelector('.chev').textContent=b.hidden?'›':'⌄';};
   el.querySelectorAll('[data-f]').forEach(inp=>{
     const f=inp.dataset.f;
-    inp.addEventListener('input',()=>{it[f]=inp.value;save(it);fillHead(it,el);renderStrip();});
-    inp.addEventListener('change',()=>{it[f]=inp.value;save(it);fillHead(it,el);renderStrip();});
+    const edit=()=>{if((it[f]||'')===inp.value)return;it[f]=inp.value;changed(it);fillHead(it,el);renderStrip();};
+    inp.addEventListener('input',edit);
+    inp.addEventListener('change',edit);
   });
   el.querySelector('[data-file]').addEventListener('change',async e=>{
     const files=[...e.target.files];e.target.value='';
     for(const f of files){it.photos.push(await shrink(f));}
-    save(it);fillPhotos(it,el);fillHead(it,el);
+    changed(it);fillPhotos(it,el);fillHead(it,el);
   });
   el.querySelector('[data-retry]').onclick=()=>{if(it.upc){it.tries=0;it.status='queued';refreshCard(it);enqueue(it.id);}};
   el.querySelector('[data-del]').onclick=async()=>{if(!confirm('Delete this item?'))return;
@@ -290,19 +322,20 @@ function buildCard(it){
 }
 function fillHead(it,el){
   el.querySelector('.t').textContent=it.title||(it.upc?'UPC '+it.upc:'(no UPC)');
-  const bits=[it.format,it.year,it.condition,it.price?'$'+it.price:''].filter(Boolean).join(' · ');
+  const bits=[it.sent?'✓ On site':it.wasSent?'Edited, send again':'',it.format,it.year,it.condition,it.price?'$'+it.price:''].filter(Boolean).join(' · ');
   el.querySelector('.s').textContent=bits||it.upc||'';
   const th=el.querySelector('.thumb');if(it.photos[0]){th.src=urlOf(it.photos[0]);}else th.removeAttribute('src');
 }
 function fillPhotos(it,el){
   const box=el.querySelector('[data-ph]');box.innerHTML='';
   it.photos.forEach((b,i)=>{const d=document.createElement('div');d.innerHTML=`<img src="${urlOf(b)}"><i>×</i><em>${i===0?'front':i===1?'back':i+1}</em>`;
-    d.querySelector('i').onclick=()=>{it.photos.splice(i,1);save(it);fillPhotos(it,el);fillHead(it,el);};box.appendChild(d);});
+    d.querySelector('i').onclick=()=>{it.photos.splice(i,1);changed(it);fillPhotos(it,el);fillHead(it,el);};box.appendChild(d);});
 }
 function fillCard(it,el,force){
   fillHead(it,el);
   el.querySelectorAll('[data-f]').forEach(inp=>{if(force||document.activeElement!==inp)inp.value=it[inp.dataset.f]||'';});
   const st=el.querySelector('[data-st]');st.textContent=(STATUS[it.status]||'')+(it.debug?'  ['+it.debug+']':'');st.className='st '+(it.status==='found'?'ok':(it.status==='none'||it.status==='limit'||it.status==='error')?'warn':'');
+  fillTags(it,el);el.querySelector('[data-sent]').checked=!!it.sent;
   el.querySelector('[data-retry]').style.display=(it.upc&&['none','limit','error'].includes(it.status))?'':'none';
   fillPhotos(it,el);
 }
@@ -313,6 +346,7 @@ function renderList(){
   $('#emptyMsg').style.display=items.length?'none':'';
   $('#navList').textContent='List ('+items.length+')';
   $('#cnt').textContent=items.length?'('+items.length+' total)':'';
+  updateSend();
 }
 function renderStrip(){
   const box=$('#strip');box.innerHTML='';
@@ -325,6 +359,74 @@ function renderStrip(){
     box.appendChild(d);
   });
 }
+
+/* ---------- send to site ---------- */
+function fillTags(it,el){el.querySelectorAll('[data-tag]').forEach(b=>b.classList.toggle('on',(it.tags||[]).includes(b.dataset.tag)));}
+// Any edit puts an item back in the send pile; the site updates that same listing.
+function changed(it){
+  if(it.sent){it.sent=false;it.wasSent=true;const el=cards.get(it.id);if(el)el.querySelector('[data-sent]').checked=false;}
+  it.rev=(it.rev||0)+1;save(it);updateSend();
+}
+function updateSend(){const n=items.filter(x=>!x.sent).length;
+  document.querySelectorAll('[data-send]').forEach(b=>{b.textContent=sending?'Sending…':'Send to site'+(n?' ('+n+')':'');b.disabled=sending||!n;});}
+function sendMsg(t,bad){document.querySelectorAll('[data-sendmsg]').forEach(m=>{m.textContent=t;m.className='msg'+(bad?' bad':'');});}
+async function api(path,opts){
+  let r;
+  try{r=await fetch(SITE+path,Object.assign({},opts,{headers:Object.assign({'X-Send-Key':sendKey},(opts||{}).headers)}));}
+  catch(e){throw new Error('Could not reach the site. Check your internet and try again.');}
+  let j={};try{j=await r.json();}catch(e){}
+  if(!r.ok||(!j.ok&&!j.sha))throw new Error(j.error||'The site returned an error ('+r.status+').');
+  return j;
+}
+async function jpeg(blob,max,q){
+  const bmp=await createImageBitmap(blob,{imageOrientation:'from-image'});const s=Math.min(1,max/Math.max(bmp.width,bmp.height));
+  const c=document.createElement('canvas');c.width=Math.round(bmp.width*s);c.height=Math.round(bmp.height*s);
+  c.getContext('2d').drawImage(bmp,0,0,c.width,c.height);
+  const b=await new Promise(r=>c.toBlob(r,'image/jpeg',q));if(!b)throw new Error('Could not process a photo.');return b;
+}
+const toB64=b=>new Promise((res,rej)=>{const f=new FileReader();f.onload=()=>res(String(f.result).split(',')[1]);f.onerror=()=>rej(new Error('Could not read a photo.'));f.readAsDataURL(b);});
+async function upload(blob){return(await api('/api/photo',{method:'POST',headers:{'Content-Type':'text/plain'},body:await toB64(blob)})).sha;}
+async function sendToSite(){
+  if(sending)return;
+  if(!sendKey){showTab('export');sendMsg('Enter your site passcode below first.',true);$('#skey').focus();return;}
+  const todo=items.filter(x=>!x.sent);if(!todo.length)return;
+  const bad=todo.filter(x=>!String(x.title).trim()||!x.format||x.format==='Other');
+  const good=todo.filter(x=>!bad.includes(x));
+  if(!good.length){sendMsg('Nothing sent. Each item needs a title and a format (not Other).',true);return;}
+  const batch=good.slice(0,100);
+  const noPhoto=batch.filter(x=>!x.photos.length).length,noPrice=batch.filter(x=>!String(x.price).trim()).length;
+  const names=batch.slice(0,12).map(x=>'• '+x.title).join('\n')+(batch.length>12?'\n…and '+(batch.length-12)+' more':'');
+  if(!confirm('Send '+batch.length+' item(s) to the site?\n\n'+names+(noPhoto?'\n\n'+noPhoto+' without photos':'')+(noPrice?'\n'+noPrice+' without a price':'')+(bad.length?'\n'+bad.length+' skipped (no title or format)':'')))return;
+  sending=true;updateSend();
+  try{
+    sendMsg('Connecting…');await api('/api/check');
+    const out=[],revs=new Map();let done=0;const total=batch.reduce((a,x)=>a+x.photos.length,0);
+    for(const it of batch){
+      revs.set(it.id,it.rev||0);
+      const photos=[...it.photos],shas=[];let thumb='';
+      for(let i=0;i<photos.length;i++){
+        sendMsg('Uploading photo '+(++done)+' of '+total+'. Keep this screen open.');
+        const full=await jpeg(photos[i],1600,.85);shas.push(await upload(full));
+        if(i===0)thumb=await upload(await jpeg(photos[i],800,.85));
+      }
+      out.push({id:it.id,upc:it.upc,title:it.title,format:it.format,year:it.year,label:it.label,condition:it.condition,price:it.price,
+        genre:it.genre||'',desc:it.desc||'',tags:it.tags||[],photos:shas,thumb});
+    }
+    sendMsg('Saving to the site…');
+    await api('/api/items',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:out})});
+    batch.forEach(it=>{if((it.rev||0)===revs.get(it.id)){it.sent=true;it.wasSent=true;save(it);refreshCard(it);}});
+    const left=items.filter(x=>!x.sent).length;
+    sendMsg('Sent '+out.length+' item(s). The site updates in a minute or two.'+(left?' '+left+' not sent yet.':''));
+  }catch(e){sendMsg(e.message+' Nothing was marked as sent.',true);}
+  sending=false;updateSend();
+}
+document.querySelectorAll('[data-send]').forEach(b=>b.onclick=sendToSite);
+$('#skey').addEventListener('input',e=>{sendKey=e.target.value.trim();dbPut('meta',{k:'skey',v:sendKey});});
+$('#checkBtn').onclick=async()=>{const m=$('#checkMsg');if(!sendKey){m.textContent='Enter the passcode first.';return;}
+  m.textContent='Testing…';try{await api('/api/check');m.textContent='Connected. Ready to send.';}catch(e){m.textContent=e.message;}};
+$('#markBtn').onclick=()=>{const todo=items.filter(x=>!x.sent);if(!todo.length)return;
+  if(!confirm('Mark '+todo.length+' item(s) as already on the site? They will not be sent.'))return;
+  todo.forEach(it=>{it.sent=true;save(it);refreshCard(it);});updateSend();$('#checkMsg').textContent='Marked '+todo.length+' item(s).';};
 
 /* ---------- tabs ---------- */
 function showTab(t){
@@ -356,10 +458,10 @@ function exportRows(){
 }
 function csvCell(v){v=String(v==null?'':v);return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}
 function makeCSV(){
-  const head=['upc','title','format','year','label','condition','price','photo_files'];
+  const head=['upc','title','format','year','label','condition','price','photo_files','genre','desc','tags'];
   const lines=[head.join(',')];
   exportRows().forEach(({it,price,files})=>{
-    lines.push([it.upc,it.title,it.format,it.year,it.label,it.condition,price,files.map(f=>f.name).join('|')].map(csvCell).join(','));
+    lines.push([it.upc,it.title,it.format,it.year,it.label,it.condition,price,files.map(f=>f.name).join('|'),it.genre,it.desc,(it.tags||[]).join('|')].map(csvCell).join(','));
   });
   return new Blob(['\ufeff'+lines.join('\r\n')+'\r\n'],{type:'text/csv'});
 }
@@ -400,7 +502,9 @@ try{const t=new File(['x'],'x.csv',{type:'text/csv'});if(navigator.canShare&&nav
   if(!db){$('#expMsg').textContent='Saving is unavailable in this browser mode (private tab?). Export before closing.';}
   else{
     items=(await dbAll('items')).sort((a,b)=>a.created-b.created);
-    const m=(await dbAll('meta')).find(x=>x.k==='dtoken');if(m){token=m.v||'';$('#dtoken').value=token;}
+    const meta=await dbAll('meta');
+    const m=meta.find(x=>x.k==='dtoken');if(m){token=m.v||'';$('#dtoken').value=token;}
+    const k=meta.find(x=>x.k==='skey');if(k){sendKey=k.v||'';$('#skey').value=sendKey;}
     try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
   }
   items.forEach(it=>{if(!Array.isArray(it.photos))it.photos=[];if(it.status==='looking'||it.status==='queued'){it.status='queued';}});
