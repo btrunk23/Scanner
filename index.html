@@ -403,14 +403,14 @@ async function sendToSite(){
     const out=[],revs=new Map();let done=0;const total=batch.reduce((a,x)=>a+x.photos.length,0);
     for(const it of batch){
       revs.set(it.id,it.rev||0);
-      const photos=[...it.photos],shas=[];let thumb='';
+      const photos=[...it.photos],shas=[],thumbs=[];
       for(let i=0;i<photos.length;i++){
         sendMsg('Uploading photo '+(++done)+' of '+total+'. Keep this screen open.');
-        const full=await jpeg(photos[i],1600,.85);shas.push(await upload(full));
-        if(i===0)thumb=await upload(await jpeg(photos[i],800,.85));
+        shas.push(await upload(await jpeg(photos[i],1600,.8)));
+        thumbs.push(await upload(await jpeg(photos[i],800,.76)));
       }
       out.push({id:it.id,upc:it.upc,title:it.title,format:it.format,year:it.year,label:it.label,condition:it.condition,price:it.price,
-        genre:it.genre||'',desc:it.desc||'',tags:it.tags||[],photos:shas,thumb});
+        genre:it.genre||'',desc:it.desc||'',tags:it.tags||[],photos:shas,thumbs});
     }
     sendMsg('Saving to the site…');
     await api('/api/items',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items:out})});
