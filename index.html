@@ -113,6 +113,49 @@ const GENRES=['Action','Adventure','Animation','Anime','Comedy','Crime','Documen
 const PACK=['Steelbook','Slipcover','Digibook / Mediabook','Box set','Multi-disc set'];
 const REL=["Collector's Edition",'Limited Edition','Boutique','Special / Anniversary Edition','Out of print','Import / Region','Promo','Screener','3D'];
 
+/* ---------- drop-down choices ---------- */
+// Starting choices; anything added with "+ Add new" is saved on this phone.
+const SEED={
+  label:['20th Century Fox Home Entertainment','20th Century Studios','Arrow Video','Columbia','Criterion','Disney','Fox','GoodTimes','Lionsgate','Lionsgate Home Entertainment','MPI','Nothing','Paramount','Reprise','Shout','Sony','Touchstone','Universal','Warner','Warner Bros.','Warner Home Video'],
+  year:Array.from({length:new Date().getFullYear()-1949},(_,i)=>String(new Date().getFullYear()-i)),
+  price:['2.99','3.99','4.49','4.99','5.99','6.99','7.49','7.99','8.99','9.99','10.99','11.99','12.99','13.99','14.49','14.99','17.99','19.99','24.99'],
+  condition:CONDS,genre:GENRES,pack:PACK,rel:REL,desc:[]
+};
+let added={};
+function choices(f,current){
+  const seen=new Set(),out=[];
+  const mine=f==='pack'||f==='rel'||f==='desc'?[]:items.map(x=>x[f]);
+  SEED[f].concat(added[f]||[],mine,current||[]).forEach(v=>{v=String(v||'').trim();if(v&&!seen.has(v)){seen.add(v);out.push(v);}});
+  if(f==='year')out.sort((a,b)=>b.localeCompare(a));
+  else if(f==='price')out.sort((a,b)=>parseFloat(a)-parseFloat(b));
+  else if(f==='label')out.sort((a,b)=>a.localeCompare(b));
+  return out;
+}
+function remember(f,v){
+  if(!choices(f).includes(v)){added[f]=(added[f]||[]).concat(v);dbPut('meta',{k:'opts',v:added});
+    setTimeout(()=>items.forEach(refreshCard));}
+}
+function askNew(f,name){
+  let v=(prompt('Add new '+name)||'').trim();
+  if(f==='price')v=v.replace(/[^0-9.]/g,'');
+  if(f==='pack'||f==='rel')v=v.replace(/\|/g,'').slice(0,40);
+  if(v)remember(f,v);
+  return v;
+}
+function fillSelect(sel,f,current){
+  sel.innerHTML='';
+  if(f!=='format')sel.add(new Option('+ Add new…','__add'));
+  sel.add(new Option('',''));
+  (f==='format'?FORMATS:choices(f,current)).forEach(v=>sel.add(new Option(f==='price'?'$'+v:v,v)));
+  sel.value=current||'';
+}
+function fillNotes(sel){
+  sel.innerHTML='';
+  sel.add(new Option('Saved notes…',''));
+  sel.add(new Option('+ Save the note below','__add'));
+  choices('desc').forEach(v=>sel.add(new Option(v.length>60?v.slice(0,60)+'…':v,v)));
+}
+
 /* ---------- storage ---------- */
 function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open('mediascan',1);
   r.onupgradeneeded=()=>{r.result.createObjectStore('items',{keyPath:'id'});r.result.createObjectStore('meta',{keyPath:'k'});};
@@ -275,7 +318,6 @@ function extOf(b){const t=(b.type||'').toLowerCase();return t.includes('jpeg')?'
 
 /* ---------- list UI ---------- */
 const cards=new Map();
-function optHTML(arr,val,blank){return (blank?'<option value=""></option>':'')+arr.map(o=>`<option${o===val?' selected':''}>${o}</option>`).join('');}
 function buildCard(it){
   const el=document.createElement('div');el.className='card';
   el.innerHTML=`<div class="head"><img class="thumb" alt=""><div class="meta"><b class="t"></b><span class="s"></span></div><span class="chev">›</span></div>
@@ -283,30 +325,37 @@ function buildCard(it){
     <div class="st" data-st></div>
     <div class="f"><small>UPC</small><input data-f="upc" inputmode="numeric"></div>
     <div class="f"><small>Title</small><input data-f="title"></div>
-    <div class="row"><div class="f"><small>Format</small><select data-f="format"></select></div><div class="f"><small>Year</small><input data-f="year" inputmode="numeric"></div></div>
-    <div class="f"><small>Label</small><input data-f="label"></div>
-    <div class="row"><div class="f"><small>Condition</small><select data-f="condition"></select></div><div class="f"><small>Price</small><input data-f="price" inputmode="decimal" placeholder="0.00"></div></div>
+    <div class="row"><div class="f"><small>Format</small><select data-f="format"></select></div><div class="f"><small>Year</small><select data-f="year"></select></div></div>
+    <div class="f"><small>Label</small><select data-f="label"></select></div>
+    <div class="row"><div class="f"><small>Condition</small><select data-f="condition"></select></div><div class="f"><small>Price</small><select data-f="price"></select></div></div>
     <div class="f"><small>Genre</small><select data-f="genre"></select></div>
     <div class="f"><small>Packaging</small><div class="chips" data-tags="pack"></div></div>
     <div class="f"><small>Release</small><div class="chips" data-tags="rel"></div></div>
-    <div class="f"><small>Description / notes (shows on the site)</small><textarea data-f="desc" rows="3"></textarea></div>
+    <div class="f"><small>Description / notes (shows on the site)</small><select data-notes style="margin-bottom:6px"></select><textarea data-f="desc" rows="3"></textarea></div>
     <div class="f"><small>Photos (first = front, second = back)</small><div class="ph" data-ph></div>
       <label class="b">Add photos<input type="file" accept="image/*" multiple hidden data-file></label></div>
     <label class="onsite"><input type="checkbox" data-sent> Already on the site (skipped when sending)</label>
     <button class="b" data-retry style="display:none">Retry lookup</button>
     <button class="b d" data-del>Delete item</button>
   </div>`;
-  el.querySelector('[data-f=format]').innerHTML=optHTML(FORMATS,'',true);
-  el.querySelector('[data-f=condition]').innerHTML=optHTML(CONDS,'',true);
-  el.querySelector('[data-f=genre]').innerHTML=optHTML(GENRES,'',true);
-  [['pack',PACK],['rel',REL]].forEach(([k,list])=>{const box=el.querySelector('[data-tags='+k+']');
-    list.forEach(name=>{const b=document.createElement('button');b.type='button';b.textContent=name;b.dataset.tag=name;
-      b.onclick=()=>{const t=it.tags||[];it.tags=t.includes(name)?t.filter(x=>x!==name):t.concat(name);changed(it);fillTags(it,el);fillHead(it,el);};box.appendChild(b);});});
+  const notes=el.querySelector('[data-notes]');
+  fillNotes(notes);
+  notes.onchange=()=>{const box=el.querySelector('[data-f=desc]');
+    if(notes.value==='__add'){const t=box.value.trim();if(t){remember('desc',t);alert('Note saved.');}else alert('Type the note first, then save it.');}
+    else if(notes.value){box.value=notes.value;box.dispatchEvent(new Event('change'));}
+    fillNotes(notes);};
   el.querySelector('[data-sent]').onchange=e=>{it.sent=e.target.checked;save(it);fillHead(it,el);updateSend();};
-  el.querySelector('.head').onclick=()=>{const b=el.querySelector('.body');b.hidden=!b.hidden;el.querySelector('.chev').textContent=b.hidden?'›':'⌄';};
+  el.querySelector('.head').onclick=()=>{const b=el.querySelector('.body');if(b.hidden){fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));}b.hidden=!b.hidden;el.querySelector('.chev').textContent=b.hidden?'›':'⌄';};
   el.querySelectorAll('[data-f]').forEach(inp=>{
     const f=inp.dataset.f;
-    const edit=()=>{if((it[f]||'')===inp.value)return;it[f]=inp.value;changed(it);fillHead(it,el);renderStrip();};
+    const edit=()=>{if(inp.value==='__add'||(it[f]||'')===inp.value)return;it[f]=inp.value;changed(it);fillHead(it,el);renderStrip();};
+    if(inp.tagName==='SELECT'){
+      inp.addEventListener('change',()=>{
+        if(inp.value==='__add'){const v=askNew(f,f);fillSelect(inp,f,v||it[f]);}
+        edit();
+      });
+      return;
+    }
     inp.addEventListener('input',edit);
     inp.addEventListener('change',edit);
   });
@@ -333,7 +382,8 @@ function fillPhotos(it,el){
 }
 function fillCard(it,el,force){
   fillHead(it,el);
-  el.querySelectorAll('[data-f]').forEach(inp=>{if(force||document.activeElement!==inp)inp.value=it[inp.dataset.f]||'';});
+  el.querySelectorAll('[data-f]').forEach(inp=>{if(!force&&document.activeElement===inp)return;
+    if(inp.tagName==='SELECT')fillSelect(inp,inp.dataset.f,it[inp.dataset.f]);else inp.value=it[inp.dataset.f]||'';});
   const st=el.querySelector('[data-st]');st.textContent=(STATUS[it.status]||'')+(it.debug?'  ['+it.debug+']':'');st.className='st '+(it.status==='found'?'ok':(it.status==='none'||it.status==='limit'||it.status==='error')?'warn':'');
   fillTags(it,el);el.querySelector('[data-sent]').checked=!!it.sent;
   el.querySelector('[data-retry]').style.display=(it.upc&&['none','limit','error'].includes(it.status))?'':'none';
@@ -355,13 +405,22 @@ function renderStrip(){
     const label=it.title||(it.status==='looking'||it.status==='queued'?'Looking up…':it.status==='none'?'Not found':it.status==='limit'?'Lookup limit':it.status==='error'?'Lookup failed':'(no title)');
     d.innerHTML=`<div style="flex:1;min-width:0"><b></b><div style="color:var(--mut)"></div></div><span style="color:var(--acc)">Edit</span>`;
     d.querySelector('b').textContent=label;d.querySelector('div div').textContent=[it.upc,it.format,it.year].filter(Boolean).join(' · ');
-    d.onclick=()=>{showTab('list');const el=cards.get(it.id);if(el){el.querySelector('.body').hidden=false;el.querySelector('.chev').textContent='⌄';el.scrollIntoView({block:'start'});}};
+    d.onclick=()=>{showTab('list');const el=cards.get(it.id);if(el){fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));el.querySelector('.body').hidden=false;el.querySelector('.chev').textContent='⌄';el.scrollIntoView({block:'start'});}};
     box.appendChild(d);
   });
 }
 
 /* ---------- send to site ---------- */
-function fillTags(it,el){el.querySelectorAll('[data-tag]').forEach(b=>b.classList.toggle('on',(it.tags||[]).includes(b.dataset.tag)));}
+function fillTags(it,el){
+  const names={pack:'packaging',rel:'release'};
+  ['pack','rel'].forEach(k=>{const box=el.querySelector('[data-tags='+k+']');box.innerHTML='';
+    const button=(text,on,tap)=>{const b=document.createElement('button');b.type='button';b.textContent=text;b.className=on?'on':'';b.onclick=tap;box.appendChild(b);};
+    const set=t=>{it.tags=t;changed(it);fillTags(it,el);fillHead(it,el);};
+    button('+ Add new',false,()=>{const v=askNew(k,names[k]);if(!v)return;const t=it.tags||[];if(t.includes(v))fillTags(it,el);else set(t.concat(v));});
+    choices(k).forEach(name=>{const on=(it.tags||[]).includes(name);
+      button(name,on,()=>{const t=it.tags||[];set(t.includes(name)?t.filter(x=>x!==name):t.concat(name));});});
+  });
+}
 // Any edit puts an item back in the send pile; the site updates that same listing.
 function changed(it){
   if(it.sent){it.sent=false;it.wasSent=true;const el=cards.get(it.id);if(el)el.querySelector('[data-sent]').checked=false;}
@@ -503,6 +562,7 @@ try{const t=new File(['x'],'x.csv',{type:'text/csv'});if(navigator.canShare&&nav
   else{
     items=(await dbAll('items')).sort((a,b)=>a.created-b.created);
     const meta=await dbAll('meta');
+    const o=meta.find(x=>x.k==='opts');if(o)added=o.v||{};
     const m=meta.find(x=>x.k==='dtoken');if(m){token=m.v||'';$('#dtoken').value=token;}
     const k=meta.find(x=>x.k==='skey');if(k){sendKey=k.v||'';$('#skey').value=sendKey;}
     try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist();}catch(e){}
