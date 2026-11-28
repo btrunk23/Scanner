@@ -31,6 +31,8 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:8px 0;overflow:hidden}
 .head{display:flex;align-items:center;gap:10px;padding:10px}
 .thumb{width:46px;height:46px;border-radius:6px;background:var(--line);object-fit:cover;flex:none}
+.shot{position:relative;width:56px;height:56px;flex:none;border:0;padding:0;background:var(--line);border-radius:6px;color:var(--acc);font-size:26px}
+.shot img{position:absolute;inset:0;width:100%;height:100%}.shot img:not([src]){display:none}
 .meta{flex:1;min-width:0}.meta b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .meta span{font-size:13px;color:var(--mut)}
 .body{padding:4px 12px 12px;border-top:1px solid var(--line)}
@@ -370,9 +372,11 @@ $('#delChecked').onclick=async()=>{
 };
 function buildCard(it){
   const el=document.createElement('div');el.className='card';el.dataset.id=it.id;
-  el.innerHTML=`<div class="head"><input type="checkbox" class="pick" aria-label="Check to delete"><img class="thumb" alt=""><div class="meta"><b class="t"></b><span class="s"></span></div><span class="chev">›</span></div>
+  el.innerHTML=`<div class="head"><input type="checkbox" class="pick" aria-label="Check to delete"><button type="button" class="shot" aria-label="Add photos">+<img class="thumb" alt=""></button><div class="meta"><b class="t"></b><span class="s"></span></div><span class="chev">›</span></div>
   <div class="body" hidden>
     <div class="st" data-st></div>
+    <div class="f"><small>Photos (first = front, second = back)</small><div class="ph" data-ph></div>
+      <label class="b">Add photos<input type="file" accept="image/*" multiple hidden data-file></label></div>
     <div class="f"><small>UPC</small><input data-f="upc" inputmode="numeric"></div>
     <div class="f"><small>Title</small><input data-f="title"></div>
     <div class="row"><div class="f"><small>Format</small><select data-f="format"></select></div><div class="f"><small>Year</small><select data-f="year"></select></div></div>
@@ -382,8 +386,6 @@ function buildCard(it){
     <div class="f"><small>Packaging</small><div class="chips" data-tags="pack"></div></div>
     <div class="f"><small>Release</small><div class="chips" data-tags="rel"></div></div>
     <div class="f"><small>Description / notes (shows on the site)</small><select data-notes style="margin-bottom:6px"></select><textarea data-f="desc" rows="3"></textarea></div>
-    <div class="f"><small>Photos (first = front, second = back)</small><div class="ph" data-ph></div>
-      <label class="b">Add photos<input type="file" accept="image/*" multiple hidden data-file></label></div>
     <label class="onsite"><input type="checkbox" data-sent> Already on the site (skipped when sending)</label>
     <button class="b" data-retry style="display:none">Retry lookup</button>
     <button class="b d" data-del>Delete item</button>
@@ -412,6 +414,7 @@ function buildCard(it){
     inp.addEventListener('input',edit);
     inp.addEventListener('change',edit);
   });
+  el.querySelector('.shot').onclick=e=>{e.stopPropagation();el.querySelector('[data-file]').click();};
   el.querySelector('[data-file]').addEventListener('change',async e=>{
     const files=[...e.target.files];e.target.value='';
     for(const f of files){it.photos.push(await shrink(f));}
