@@ -279,10 +279,10 @@ function cleanTitle(raw){
   EXTRAS.forEach(([re])=>{t=t.replace(new RegExp(re.source+'(\\s+edition)?','ig'),' ');});
   t=t.replace(/\b(4k(\s+ultra)?(\s+hd)?|ultra\s+hd|uhd|blu[\s-]?ray(\s+disc)?|dvd|vhs|compact\s+disc|audio\s+cd|cd)\b/ig,' ')
     .replace(/\b(\d+|two|three)[\s-]*discs?(\s+set)?\b/ig,' ')
-    .replace(/\b(wide\s*screen|full\s*screen|digital\s+(hd|copy|code)|combo\s+pack|brand[\s-]new(?=\W*(sealed|factory|$))|(new\s+)?factory[\s-]sealed|new\s*(&|and|\/)?\s*sealed|region\s+(free|[abc1-9]\b)|rated\s+(pg-13|pg|nc-17|r|g)\b)/ig,' ')
+    .replace(/\b(wide\s*screen|full\s*screen|digital\s+(hd|copy|code)|[+&]\s*digital\b|combo\s+pack|brand[\s-]new(?=\W*(sealed|factory|$))|(new\s+)?factory[\s-]sealed|new\s*(&|and|\/)?\s*sealed|region\s+(free|[abc1-9]\b)|rated\s+(pg-13|pg|nc-17|r|g)\b)/ig,' ')
     .replace(/\s+/g,' ').trim();
   let last;
-  do{last=t;t=t.replace(/(\s*[-–—,:;+\/|&*!]+|\s+(sealed|new(?=$)))$/i,t.split(' ').length>1?'':'$&').replace(/^[-–—,:;+\/|*]+\s*/,'').trim();}while(t!==last);
+  do{last=t;t=t.replace(/(\s*[-–—,:;+\/|&*]+|\s+(sealed|new(?=$)))$/i,t.split(' ').length>1?'':'$&').replace(/^[-–—,:;+\/|*]+\s*/,'').trim();}while(t!==last);
   t=t.replace(/\s+([,:;])/g,'$1').replace(/([-–—,:;|\/+])(\s*[-–—,:;|\/+])+/g,'$1');
   if(!t)return raw.trim();
   return extras.length?t+' ('+extras.join(', ')+')':t;
