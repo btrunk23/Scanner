@@ -265,6 +265,25 @@ function guessFormat(s){s=(s||'').toLowerCase();
   if(/4k|uhd|ultra hd/.test(s))return'4K UHD';if(/blu-?ray/.test(s))return'Blu-ray';if(/\bdvd\b/.test(s))return'DVD';
   if(/\bvhs\b/.test(s))return'VHS';if(/\bcd\b|compact disc|audio cd/.test(s))return'CD';return'';}
 function yearFrom(s){const m=(s||'').match(/\b(19[2-9]\d|20[0-3]\d)\b/);return m?m[1]:'';}
+// Lookup titles: keep the name, put the normal extras in ( ), drop the seller wording.
+const EXTRAS=[[/steel\s*book/i,'Steelbook'],[/slip\s*cover/i,'Slipcover'],[/(digi|media)\s*book/i,'Digibook'],[/box(ed)?[\s-]*set/i,'Box Set'],
+  [/\b(\d{1,3}(st|nd|rd|th))[\s-]+anniversary/i,'$1 Anniversary'],[/collector'?s'?\s+edition/i,"Collector's Edition"],[/limited\s+edition/i,'Limited Edition'],
+  [/special\s+edition/i,'Special Edition'],[/director'?s\s+cut/i,"Director's Cut"],[/extended\s+(edition|cut)/i,'Extended'],[/\bunrated\b/i,'Unrated']];
+function cleanTitle(raw){
+  const extras=[];
+  EXTRAS.forEach(([re,name])=>{const m=raw.match(re);if(m)extras.push(name.replace('$1',(m[1]||'').toLowerCase()));});
+  let t=raw.replace(/\([^()]*\)|\[[^\[\]]*\]/g,' ');
+  EXTRAS.forEach(([re])=>{t=t.replace(new RegExp(re.source+'(\\s+edition)?','ig'),' ');});
+  t=t.replace(/\b(4k(\s+ultra)?(\s+hd)?|ultra\s+hd|uhd|blu[\s-]?ray(\s+disc)?|dvd|vhs|compact\s+disc|audio\s+cd|cd)\b/ig,' ')
+    .replace(/\b(\d+|two|three)[\s-]*discs?(\s+set)?\b/ig,' ')
+    .replace(/\b(wide\s*screen|full\s*screen|digital\s+(hd|copy|code)|combo\s+pack|brand[\s-]new(?=\W*(sealed|factory|$))|(new\s+)?factory[\s-]sealed|new\s*(&|and|\/)?\s*sealed|region\s+(free|[abc1-9]\b)|rated\s+(pg-13|pg|nc-17|r|g)\b)/ig,' ')
+    .replace(/\s+/g,' ').trim();
+  let last;
+  do{last=t;t=t.replace(/(\s*[-–—,:;+\/|&*!]+|\s+(sealed|new(?=$)))$/i,t.split(' ').length>1?'':'$&').replace(/^[-–—,:;+\/|*]+\s*/,'').trim();}while(t!==last);
+  t=t.replace(/\s+([,:;])/g,'$1').replace(/([-–—,:;|\/+])(\s*[-–—,:;|\/+])+/g,'$1');
+  if(!t)return raw.trim();
+  return extras.length?t+' ('+extras.join(', ')+')':t;
+}
 async function getJSON(url,dbg,name){
   const tries=[url,'https://api.allorigins.win/raw?url='+encodeURIComponent(url),'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(url)];
   let last='';
@@ -308,6 +327,7 @@ async function lookup(it){
     }catch(e){}
   }
   if(found){
+    if(found.title)found.title=cleanTitle(String(found.title));
     ['title','format','year','label'].forEach(f=>{if(!it[f]&&found[f])it[f]=String(found[f]);});
     it.status='found';
   }else it.status=limited?'limit':failed?'error':'none';
