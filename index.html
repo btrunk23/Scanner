@@ -47,6 +47,8 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 textarea{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
 .pick{width:24px;height:24px;flex:none;margin:0;padding:0}
 .bulk{display:flex;flex-wrap:wrap;align-items:center;margin:4px 0}
+.group>summary{padding:12px 2px;font-weight:700;cursor:pointer}
+.group>button{padding:8px 12px;font-size:13px}
 .onsite{display:flex;gap:8px;align-items:center;margin:10px 0;font-size:14px}.onsite input{width:auto}
 button.b:disabled{opacity:.5}
 </style>
@@ -68,7 +70,10 @@ button.b:disabled{opacity:.5}
   <button class="b p" data-send>Send to site</button>
   <div class="msg" data-sendmsg></div>
   <div class="bulk" id="bulk"><button class="b" id="checkAll">Check all</button><button class="b" id="uncheckAll">Uncheck all</button><button class="b d" id="delChecked">Delete checked</button></div>
-  <div id="list"></div>
+  <div id="list">
+    <details class="group" data-g="off" open><summary></summary><button class="b" data-all></button><div></div></details>
+    <details class="group" data-g="on"><summary></summary><button class="b" data-all></button><div></div></details>
+  </div>
   <div class="msg" id="emptyMsg">Nothing yet. Scan something.</div>
 </section>
 
@@ -324,10 +329,15 @@ function extOf(b){const t=(b.type||'').toLowerCase();return t.includes('jpeg')?'
 const cards=new Map();
 const picked=new Set();
 function updatePicked(){
+  ['off','on'].forEach(g=>{const d=$('[data-g='+g+']'),ids=groupIds(g);
+    d.querySelector('[data-all]').textContent=ids.length&&ids.every(id=>picked.has(id))?'Uncheck these':'Check these';});
   cards.forEach((el,id)=>el.querySelector('.pick').checked=picked.has(id));
   $('#bulk').style.display=items.length?'':'none';
   const b=$('#delChecked');b.textContent='Delete checked'+(picked.size?' ('+picked.size+')':'');b.disabled=sending||!picked.size;
 }
+const groupIds=g=>[...$('[data-g='+g+']').querySelectorAll('.card')].map(el=>el.dataset.id);
+['off','on'].forEach(g=>$('[data-g='+g+'] [data-all]').onclick=()=>{
+  const ids=groupIds(g),all=ids.every(id=>picked.has(id));ids.forEach(id=>all?picked.delete(id):picked.add(id));updatePicked();});
 $('#checkAll').onclick=()=>{items.forEach(x=>picked.add(x.id));updatePicked();};
 $('#uncheckAll').onclick=()=>{picked.clear();updatePicked();};
 $('#delChecked').onclick=async()=>{
@@ -339,7 +349,7 @@ $('#delChecked').onclick=async()=>{
   renderList();renderStrip();
 };
 function buildCard(it){
-  const el=document.createElement('div');el.className='card';
+  const el=document.createElement('div');el.className='card';el.dataset.id=it.id;
   el.innerHTML=`<div class="head"><input type="checkbox" class="pick" aria-label="Check to delete"><img class="thumb" alt=""><div class="meta"><b class="t"></b><span class="s"></span></div><span class="chev">›</span></div>
   <div class="body" hidden>
     <div class="st" data-st></div>
@@ -414,8 +424,13 @@ function fillCard(it,el,force){
 }
 function refreshCard(it){const el=cards.get(it.id);if(el)fillCard(it,el,false);}
 function renderList(){
-  const box=$('#list');box.innerHTML='';
-  [...items].reverse().forEach(it=>{box.appendChild(cards.get(it.id)||buildCard(it));});
+  ['off','on'].forEach(g=>{
+    const d=$('[data-g='+g+']'),box=d.querySelector('div');box.innerHTML='';
+    const mine=[...items].reverse().filter(x=>!!x.sent===(g==='on'));
+    mine.forEach(it=>box.appendChild(cards.get(it.id)||buildCard(it)));
+    d.querySelector('summary').textContent=(g==='on'?'On site':'Not on site')+' ('+mine.length+')';
+    d.style.display=mine.length?'':'none';
+  });
   $('#emptyMsg').style.display=items.length?'none':'';
   $('#navList').textContent='List ('+items.length+')';
   $('#cnt').textContent=items.length?'('+items.length+' total)':'';
@@ -428,7 +443,7 @@ function renderStrip(){
     const label=it.title||(it.status==='looking'||it.status==='queued'?'Looking up…':it.status==='none'?'Not found':it.status==='limit'?'Lookup limit':it.status==='error'?'Lookup failed':'(no title)');
     d.innerHTML=`<div style="flex:1;min-width:0"><b></b><div style="color:var(--mut)"></div></div><span style="color:var(--acc)">Edit</span>`;
     d.querySelector('b').textContent=label;d.querySelector('div div').textContent=[it.upc,it.format,it.year].filter(Boolean).join(' · ');
-    d.onclick=()=>{showTab('list');const el=cards.get(it.id);if(el){fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));el.querySelector('.body').hidden=false;el.querySelector('.chev').textContent='⌄';el.scrollIntoView({block:'start'});}};
+    d.onclick=()=>{showTab('list');const el=cards.get(it.id);if(el){el.closest('details').open=true;fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));el.querySelector('.body').hidden=false;el.querySelector('.chev').textContent='⌄';el.scrollIntoView({block:'start'});}};
     box.appendChild(d);
   });
 }
@@ -501,7 +516,7 @@ async function sendToSite(){
     const left=items.filter(x=>!x.sent).length;
     sendMsg('Sent '+out.length+' item(s). The site updates in a minute or two.'+(left?' '+left+' not sent yet.':''));
   }catch(e){sendMsg(e.message+' Nothing was marked as sent.',true);}
-  sending=false;updateSend();
+  sending=false;renderList();updateSend();
 }
 document.querySelectorAll('[data-send]').forEach(b=>b.onclick=sendToSite);
 $('#skey').addEventListener('input',e=>{sendKey=e.target.value.trim();dbPut('meta',{k:'skey',v:sendKey});});
@@ -509,10 +524,11 @@ $('#checkBtn').onclick=async()=>{const m=$('#checkMsg');if(!sendKey){m.textConte
   m.textContent='Testing…';try{await api('/api/check');m.textContent='Connected. Ready to send.';}catch(e){m.textContent=e.message;}};
 $('#markBtn').onclick=()=>{const todo=items.filter(x=>!x.sent);if(!todo.length)return;
   if(!confirm('Mark '+todo.length+' item(s) as already on the site? They will not be sent.'))return;
-  todo.forEach(it=>{it.sent=true;save(it);refreshCard(it);});updateSend();$('#checkMsg').textContent='Marked '+todo.length+' item(s).';};
+  todo.forEach(it=>{it.sent=true;save(it);refreshCard(it);});renderList();$('#checkMsg').textContent='Marked '+todo.length+' item(s).';};
 
 /* ---------- tabs ---------- */
 function showTab(t){
+  if(t==='list')renderList();
   document.querySelectorAll('section').forEach(s=>s.classList.toggle('on',s.id==='s-'+t));
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   if(t!=='scan')stopCam();
@@ -522,7 +538,7 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.datas
 $('#camBtn').onclick=()=>scanning?(stopCam(),camMsg('Camera stopped.')):startCam();
 $('#manualBtn').onclick=()=>{const c=cleanUPC($('#manual').value);if(c.length<8){camMsg('Enter a full UPC (8 to 14 digits).',true);return;}$('#manual').value='';addScanned(c);};
 $('#manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('#manualBtn').click();});
-$('#blankBtn').onclick=()=>{const it=newItem('');beep();renderList();renderStrip();showTab('list');const el=cards.get(it.id);el.querySelector('.body').hidden=false;el.querySelector('.chev').textContent='⌄';};
+$('#blankBtn').onclick=()=>{const it=newItem('');beep();renderList();renderStrip();showTab('list');const el=cards.get(it.id);el.closest('details').open=true;el.querySelector('.body').hidden=false;el.querySelector('.chev').textContent='⌄';};
 $('#retryBtn').onclick=()=>{let n=0;items.forEach(it=>{if(it.upc&&['none','limit','error','queued','looking'].includes(it.status)){it.tries=0;it.status='queued';refreshCard(it);enqueue(it.id);n++;}});$('#expMsg').textContent=n?'Retrying '+n+' item(s).':'Nothing to retry.';};
 $('#dtoken').addEventListener('change',e=>{token=e.target.value.trim();dbPut('meta',{k:'dtoken',v:token});});
 $('#clearBtn').onclick=async()=>{if(!items.length)return;if(!confirm('Delete ALL '+items.length+' items and photos? Export first if you need them.'))return;
