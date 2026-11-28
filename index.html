@@ -39,9 +39,9 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 .body{padding:4px 12px 12px;border-top:1px solid var(--line)}
 .st{font-size:13px;margin:6px 0}.st.ok{color:var(--ok)}.st.warn{color:var(--warn)}
 .ph{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
-.ph div{position:relative}.ph img{width:76px;height:76px;object-fit:cover;border-radius:8px;display:block}
+.ph div{position:relative}.ph .mv{display:flex;gap:4px;margin-top:4px}.ph .mv button{flex:1;min-height:36px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font-size:16px}.ph .mv button:disabled{opacity:.3}.ph img{width:76px;height:76px;object-fit:cover;border-radius:8px;display:block}
 .ph i{position:absolute;top:-6px;right:-6px;background:var(--bad);color:#fff;border-radius:50%;width:22px;height:22px;text-align:center;font-style:normal;line-height:22px;font-size:14px}
-.ph em{position:absolute;left:4px;bottom:4px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:1px 5px;border-radius:4px;font-style:normal}
+.ph em{position:absolute;left:4px;top:54px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:1px 5px;border-radius:4px;font-style:normal}
 .mini{display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .mini b{font-weight:600}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -437,7 +437,9 @@ function fillHead(it,el){
 }
 function fillPhotos(it,el){
   const box=el.querySelector('[data-ph]');box.innerHTML='';
-  it.photos.forEach((b,i)=>{const d=document.createElement('div');d.innerHTML=`<img src="${urlOf(b)}"><i>×</i><em>${i===0?'front':i===1?'back':i+1}</em>`;
+  it.photos.forEach((b,i)=>{const d=document.createElement('div');d.innerHTML=`<img src="${urlOf(b)}"><i>×</i><em>${i===0?'front':i===1?'back':i+1}</em><span class="mv"><button type="button" aria-label="Move earlier">‹</button><button type="button" aria-label="Move later">›</button></span>`;
+    d.querySelectorAll('.mv button').forEach((btn,n)=>{const j=i+(n?1:-1);btn.disabled=j<0||j>=it.photos.length;
+      btn.onclick=()=>{[it.photos[i],it.photos[j]]=[it.photos[j],it.photos[i]];changed(it);fillPhotos(it,el);fillHead(it,el);};});
     d.querySelector('i').onclick=()=>{it.photos.splice(i,1);changed(it);fillPhotos(it,el);fillHead(it,el);};box.appendChild(d);});
 }
 function fillCard(it,el,force){
