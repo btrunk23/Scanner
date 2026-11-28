@@ -45,6 +45,8 @@ input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:
 .chips button{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:14px}
 .chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
 textarea{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:inherit}
+.pick{width:24px;height:24px;flex:none;margin:0;padding:0}
+.bulk{display:flex;flex-wrap:wrap;align-items:center;margin:4px 0}
 .onsite{display:flex;gap:8px;align-items:center;margin:10px 0;font-size:14px}.onsite input{width:auto}
 button.b:disabled{opacity:.5}
 </style>
@@ -65,6 +67,7 @@ button.b:disabled{opacity:.5}
   <h2>List</h2>
   <button class="b p" data-send>Send to site</button>
   <div class="msg" data-sendmsg></div>
+  <div class="bulk" id="bulk"><button class="b" id="checkAll">Check all</button><button class="b" id="uncheckAll">Uncheck all</button><button class="b d" id="delChecked">Delete checked</button></div>
   <div id="list"></div>
   <div class="msg" id="emptyMsg">Nothing yet. Scan something.</div>
 </section>
@@ -164,7 +167,8 @@ function dbPut(store,val){if(!db)return Promise.resolve();return new Promise(res
 function dbDel(store,key){if(!db)return Promise.resolve();return new Promise(res=>{try{const t=db.transaction(store,'readwrite');t.objectStore(store).delete(key);t.oncomplete=res;t.onerror=res;}catch(e){res();}});}
 function dbAll(store){return new Promise(res=>{try{const q=db.transaction(store).objectStore(store).getAll();q.onsuccess=()=>res(q.result);q.onerror=()=>res([]);}catch(e){res([]);}});}
 const timers={};
-function save(it){clearTimeout(timers[it.id]);timers[it.id]=setTimeout(()=>dbPut('items',it),300);}
+// A deleted item is never written back (a lookup can still finish after the delete).
+function save(it){clearTimeout(timers[it.id]);timers[it.id]=setTimeout(()=>{if(items.includes(it))dbPut('items',it);},300);}
 
 /* ---------- items ---------- */
 function newItem(upc){
@@ -318,9 +322,25 @@ function extOf(b){const t=(b.type||'').toLowerCase();return t.includes('jpeg')?'
 
 /* ---------- list UI ---------- */
 const cards=new Map();
+const picked=new Set();
+function updatePicked(){
+  cards.forEach((el,id)=>el.querySelector('.pick').checked=picked.has(id));
+  $('#bulk').style.display=items.length?'':'none';
+  const b=$('#delChecked');b.textContent='Delete checked'+(picked.size?' ('+picked.size+')':'');b.disabled=sending||!picked.size;
+}
+$('#checkAll').onclick=()=>{items.forEach(x=>picked.add(x.id));updatePicked();};
+$('#uncheckAll').onclick=()=>{picked.clear();updatePicked();};
+$('#delChecked').onclick=async()=>{
+  const gone=items.filter(x=>picked.has(x.id));if(!gone.length||sending)return;
+  const unsent=gone.filter(x=>!x.sent).length;
+  if(!confirm('Delete '+gone.length+' item(s) and their photos from the scanner?'+(unsent?'\n\n'+unsent+' of them are NOT on the site yet.':'')))return;
+  items=items.filter(x=>!picked.has(x.id));picked.clear();
+  for(const x of gone){clearTimeout(timers[x.id]);cards.delete(x.id);await dbDel('items',x.id);}
+  renderList();renderStrip();
+};
 function buildCard(it){
   const el=document.createElement('div');el.className='card';
-  el.innerHTML=`<div class="head"><img class="thumb" alt=""><div class="meta"><b class="t"></b><span class="s"></span></div><span class="chev">›</span></div>
+  el.innerHTML=`<div class="head"><input type="checkbox" class="pick" aria-label="Check to delete"><img class="thumb" alt=""><div class="meta"><b class="t"></b><span class="s"></span></div><span class="chev">›</span></div>
   <div class="body" hidden>
     <div class="st" data-st></div>
     <div class="f"><small>UPC</small><input data-f="upc" inputmode="numeric"></div>
@@ -344,6 +364,9 @@ function buildCard(it){
     if(notes.value==='__add'){const t=box.value.trim();if(t){remember('desc',t);alert('Note saved.');}else alert('Type the note first, then save it.');}
     else if(notes.value){box.value=notes.value;box.dispatchEvent(new Event('change'));}
     fillNotes(notes);};
+  const pick=el.querySelector('.pick');
+  pick.onclick=e=>e.stopPropagation();
+  pick.onchange=()=>{pick.checked?picked.add(it.id):picked.delete(it.id);updatePicked();};
   el.querySelector('[data-sent]').onchange=e=>{it.sent=e.target.checked;save(it);fillHead(it,el);updateSend();};
   el.querySelector('.head').onclick=()=>{const b=el.querySelector('.body');if(b.hidden){fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));}b.hidden=!b.hidden;el.querySelector('.chev').textContent=b.hidden?'›':'⌄';};
   el.querySelectorAll('[data-f]').forEach(inp=>{
@@ -366,7 +389,7 @@ function buildCard(it){
   });
   el.querySelector('[data-retry]').onclick=()=>{if(it.upc){it.tries=0;it.status='queued';refreshCard(it);enqueue(it.id);}};
   el.querySelector('[data-del]').onclick=async()=>{if(!confirm('Delete this item?'))return;
-    items=items.filter(x=>x.id!==it.id);cards.delete(it.id);el.remove();await dbDel('items',it.id);renderList();renderStrip();};
+    items=items.filter(x=>x.id!==it.id);picked.delete(it.id);clearTimeout(timers[it.id]);cards.delete(it.id);el.remove();await dbDel('items',it.id);renderList();renderStrip();};
   cards.set(it.id,el);fillCard(it,el,true);return el;
 }
 function fillHead(it,el){
@@ -396,7 +419,7 @@ function renderList(){
   $('#emptyMsg').style.display=items.length?'none':'';
   $('#navList').textContent='List ('+items.length+')';
   $('#cnt').textContent=items.length?'('+items.length+' total)':'';
-  updateSend();
+  updateSend();updatePicked();
 }
 function renderStrip(){
   const box=$('#strip');box.innerHTML='';
@@ -427,7 +450,8 @@ function changed(it){
   it.rev=(it.rev||0)+1;save(it);updateSend();
 }
 function updateSend(){const n=items.filter(x=>!x.sent).length;
-  document.querySelectorAll('[data-send]').forEach(b=>{b.textContent=sending?'Sending…':'Send to site'+(n?' ('+n+')':'');b.disabled=sending||!n;});}
+  document.querySelectorAll('[data-send]').forEach(b=>{b.textContent=sending?'Sending…':'Send to site'+(n?' ('+n+')':'');b.disabled=sending||!n;});
+  updatePicked();}
 function sendMsg(t,bad){document.querySelectorAll('[data-sendmsg]').forEach(m=>{m.textContent=t;m.className='msg'+(bad?' bad':'');});}
 async function api(path,opts){
   let r;
@@ -502,7 +526,7 @@ $('#blankBtn').onclick=()=>{const it=newItem('');beep();renderList();renderStrip
 $('#retryBtn').onclick=()=>{let n=0;items.forEach(it=>{if(it.upc&&['none','limit','error','queued','looking'].includes(it.status)){it.tries=0;it.status='queued';refreshCard(it);enqueue(it.id);n++;}});$('#expMsg').textContent=n?'Retrying '+n+' item(s).':'Nothing to retry.';};
 $('#dtoken').addEventListener('change',e=>{token=e.target.value.trim();dbPut('meta',{k:'dtoken',v:token});});
 $('#clearBtn').onclick=async()=>{if(!items.length)return;if(!confirm('Delete ALL '+items.length+' items and photos? Export first if you need them.'))return;
-  for(const it of items)await dbDel('items',it.id);items=[];cards.clear();renderList();renderStrip();};
+  for(const it of items)await dbDel('items',it.id);items=[];picked.clear();cards.clear();renderList();renderStrip();};
 
 /* ---------- export ---------- */
 function exportRows(){
