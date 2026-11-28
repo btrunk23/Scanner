@@ -28,8 +28,9 @@ button.d{color:var(--bad)}
 input,select{width:100%;padding:11px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font-size:16px}
 .row{display:flex;gap:8px}.row>*{flex:1}
 .f{margin:8px 0}.f small{display:block;color:var(--mut);margin-bottom:3px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:8px 0;overflow:hidden}
-.head{display:flex;align-items:center;gap:10px;padding:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:8px 0}
+.head{display:flex;align-items:center;gap:10px;padding:10px;background:var(--card);border-radius:12px;cursor:pointer}
+.card.open .head{position:sticky;top:0;z-index:2}
 .thumb{width:46px;height:46px;border-radius:6px;background:var(--line);object-fit:cover;flex:none}
 .shot{position:relative;width:56px;height:56px;flex:none;border:0;padding:0;background:var(--line);border-radius:6px;color:var(--acc);font-size:26px}
 .shot img{position:absolute;inset:0;width:100%;height:100%}.shot img:not([src]){display:none}
@@ -400,7 +401,9 @@ function buildCard(it){
   pick.onclick=e=>e.stopPropagation();
   pick.onchange=()=>{pick.checked?picked.add(it.id):picked.delete(it.id);updatePicked();};
   el.querySelector('[data-sent]').onchange=e=>{it.sent=e.target.checked;save(it);fillHead(it,el);updateSend();};
-  el.querySelector('.head').onclick=()=>{const b=el.querySelector('.body');if(b.hidden){fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));}b.hidden=!b.hidden;el.querySelector('.chev').textContent=b.hidden?'›':'⌄';};
+  el.querySelector('.head').onclick=()=>{const b=el.querySelector('.body');if(b.hidden){fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));}setOpen(el,b.hidden);
+    // Closing from further down: bring this bar to the top so the next one is right there.
+    if(b.hidden&&el.getBoundingClientRect().top<0)el.scrollIntoView();};
   el.querySelectorAll('[data-f]').forEach(inp=>{
     const f=inp.dataset.f;
     const edit=()=>{if(inp.value==='__add'||(it[f]||'')===inp.value)return;it[f]=inp.value;changed(it);fillHead(it,el);renderStrip();};
@@ -425,6 +428,7 @@ function buildCard(it){
     items=items.filter(x=>x.id!==it.id);picked.delete(it.id);clearTimeout(timers[it.id]);cards.delete(it.id);el.remove();await dbDel('items',it.id);renderList();renderStrip();};
   cards.set(it.id,el);fillCard(it,el,true);return el;
 }
+function setOpen(el,open){el.querySelector('.body').hidden=!open;el.classList.toggle('open',open);el.querySelector('.chev').textContent=open?'⌄':'›';}
 function fillHead(it,el){
   el.querySelector('.t').textContent=it.title||(it.upc?'UPC '+it.upc:'(no UPC)');
   const bits=[it.sent?'✓ On site':it.wasSent?'Edited, send again':'',it.format,it.year,it.condition,it.price?'$'+it.price:''].filter(Boolean).join(' · ');
@@ -466,7 +470,7 @@ function renderStrip(){
     const label=it.title||(it.status==='looking'||it.status==='queued'?'Looking up…':it.status==='none'?'Not found':it.status==='limit'?'Lookup limit':it.status==='error'?'Lookup failed':'(no title)');
     d.innerHTML=`<div style="flex:1;min-width:0"><b></b><div style="color:var(--mut)"></div></div><span style="color:var(--acc)">Edit</span>`;
     d.querySelector('b').textContent=label;d.querySelector('div div').textContent=[it.upc,it.format,it.year].filter(Boolean).join(' · ');
-    d.onclick=()=>{showTab('list');const el=cards.get(it.id);if(el){el.closest('details').open=true;fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));el.querySelector('.body').hidden=false;el.querySelector('.chev').textContent='⌄';el.scrollIntoView({block:'start'});}};
+    d.onclick=()=>{showTab('list');const el=cards.get(it.id);if(el){el.closest('details').open=true;fillCard(it,el,false);fillNotes(el.querySelector('[data-notes]'));setOpen(el,true);el.scrollIntoView({block:'start'});}};
     box.appendChild(d);
   });
 }
@@ -561,7 +565,7 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>showTab(b.datas
 $('#camBtn').onclick=()=>scanning?(stopCam(),camMsg('Camera stopped.')):startCam();
 $('#manualBtn').onclick=()=>{const c=cleanUPC($('#manual').value);if(c.length<8){camMsg('Enter a full UPC (8 to 14 digits).',true);return;}$('#manual').value='';addScanned(c);};
 $('#manual').addEventListener('keydown',e=>{if(e.key==='Enter')$('#manualBtn').click();});
-$('#blankBtn').onclick=()=>{const it=newItem('');beep();renderList();renderStrip();showTab('list');const el=cards.get(it.id);el.closest('details').open=true;el.querySelector('.body').hidden=false;el.querySelector('.chev').textContent='⌄';};
+$('#blankBtn').onclick=()=>{const it=newItem('');beep();renderList();renderStrip();showTab('list');const el=cards.get(it.id);el.closest('details').open=true;setOpen(el,true);};
 $('#retryBtn').onclick=()=>{let n=0;items.forEach(it=>{if(it.upc&&['none','limit','error','queued','looking'].includes(it.status)){it.tries=0;it.status='queued';refreshCard(it);enqueue(it.id);n++;}});$('#expMsg').textContent=n?'Retrying '+n+' item(s).':'Nothing to retry.';};
 $('#dtoken').addEventListener('change',e=>{token=e.target.value.trim();dbPut('meta',{k:'dtoken',v:token});});
 $('#clearBtn').onclick=async()=>{if(!items.length)return;if(!confirm('Delete ALL '+items.length+' items and photos? Export first if you need them.'))return;
